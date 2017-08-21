@@ -7,35 +7,30 @@ requests.session
 This module provides a Session object to manage and persist settings across
 requests (cookies, auth, proxies).
 """
+import logging
 import os
 import platform
 import time
 from collections import Mapping
 from datetime import timedelta
 
-from .auth import _basic_auth_str
-from .compat import cookielib, is_py3, OrderedDict, urljoin, urlparse
-from .cookies import (
-    cookiejar_from_dict, extract_cookies_to_jar, RequestsCookieJar, merge_cookies)
-from .models import Request, PreparedRequest, DEFAULT_REDIRECT_LIMIT
-from .hooks import default_hooks, dispatch_hook
 from ._internal_utils import to_native_string
-from .utils import to_key_val_list, default_headers
-from .exceptions import (
-    TooManyRedirects, InvalidSchema, ChunkedEncodingError, ContentDecodingError)
-
-from .structures import CaseInsensitiveDict
 from .adapters import HTTPAdapter
-
-from .utils import (
-    requote_uri, get_environ_proxies, get_netrc_auth, should_bypass_proxies,
-    get_auth_from_url, rewind_body
-)
-
-from .status_codes import codes
-
+from .auth import _basic_auth_str
+from .compat import OrderedDict, cookielib, is_py3, urljoin, urlparse
+from .cookies import (RequestsCookieJar, cookiejar_from_dict,
+                      extract_cookies_to_jar, merge_cookies)
+from .exceptions import (ChunkedEncodingError, ContentDecodingError,
+                         InvalidSchema, TooManyRedirects)
+from .hooks import default_hooks, dispatch_hook
 # formerly defined here, reexposed here for backward compatibility
-from .models import REDIRECT_STATI
+from .models import (DEFAULT_REDIRECT_LIMIT, REDIRECT_STATI, PreparedRequest,
+                     Request)
+from .status_codes import codes
+from .structures import CaseInsensitiveDict
+from .utils import (default_headers, get_auth_from_url, get_environ_proxies,
+                    get_netrc_auth, requote_uri, rewind_body,
+                    should_bypass_proxies, to_key_val_list)
 
 # Preferred clock, based on which one is more accurate on a given system.
 if platform.system() == 'Windows':
@@ -45,6 +40,10 @@ if platform.system() == 'Windows':
         preferred_clock = time.clock
 else:
     preferred_clock = time.time
+
+# logger settings
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 def merge_setting(request_setting, session_setting, dict_class=OrderedDict):
@@ -113,7 +112,12 @@ class SessionRedirectMixin(object):
             # To solve this, we re-encode the location in latin1.
             if is_py3:
                 location = location.encode('latin1')
-            return to_native_string(location, 'utf8')
+            try:
+                result = to_native_string(location, 'utf8')
+            except UnicodeDecodeError:
+                logger.error("{}".format(location))
+
+            return
         return None
 
     def resolve_redirects(self, resp, req, stream=False, timeout=None,
@@ -439,9 +443,9 @@ class Session(SessionRedirectMixin):
         return p
 
     def request(self, method, url,
-            params=None, data=None, headers=None, cookies=None, files=None,
-            auth=None, timeout=None, allow_redirects=True, proxies=None,
-            hooks=None, stream=None, verify=None, cert=None, json=None):
+                params=None, data=None, headers=None, cookies=None, files=None,
+                auth=None, timeout=None, allow_redirects=True, proxies=None,
+                hooks=None, stream=None, verify=None, cert=None, json=None):
         """Constructs a :class:`Request <Request>`, prepares it and sends it.
         Returns :class:`Response <Response>` object.
 
